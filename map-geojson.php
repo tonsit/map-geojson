@@ -10,12 +10,13 @@ License: Restricted
 */
 
 
-add_action( 'init', 'sabra_maps_register_table', 1 );
-add_action( 'switch_blog', 'sabra_maps_register_table' );
+add_action( 'init', 'sabra_maps_register_tables', 1 );
+add_action( 'switch_blog', 'sabra_maps_register_tables' );
  
-function sabra_maps_register_table() {
+function sabra_maps_register_tables() {
     global $wpdb;
     $wpdb->sabra_maps = "{$wpdb->prefix}sabra_maps";
+	$wpdb->sabra_geo_json = "{$wpdb->prefix}sabra_maps_geo_json";
 }
 
 function sabra_maps_create_tables() {
@@ -23,7 +24,8 @@ function sabra_maps_create_tables() {
 	global $wpdb;
 	global $charset_collate;
 	// Call this manually as we may have missed the init hook
-	sabra_maps_register_table();
+	sabra_maps_register_tables();
+
 	$sql_create_table = "CREATE TABLE {$wpdb->sabra_maps} (
           id bigint(20) unsigned NOT NULL auto_increment,
           post_id bigint(20) unsigned NOT NULL default '0',
@@ -37,10 +39,43 @@ function sabra_maps_create_tables() {
           KEY post_id (post_id)
      ) $charset_collate; ";
 	dbDelta( $sql_create_table );
+
+	$sql_create_table = "CREATE TABLE {$wpdb->sabra_maps_geo_json} (
+          id bigint(20) unsigned NOT NULL auto_increment,
+          post_id bigint(20) unsigned NOT NULL default '0',
+          item_id bigint(20) unsigned NOT NULL default '0',
+          date_created datetime NOT NULL default '0000-00-00 00:00:00',
+          date_active datetime NOT NULL default '0000-00-00 00:00:00',
+          date_replaced datetime NULL,
+          value1 varchar(40) NOT NULL default 'updated',
+          value2 varchar(40) NULL,
+          PRIMARY KEY  (id),
+          KEY post_id (post_id)
+     ) $charset_collate; ";
+	dbDelta( $sql_create_table );
+	
 }
 
-/* create tables on plugin activation */
+function sabra_maps_import_geo_json() {
+	
+//	gemotry database -- import from json
+
+
+//load from php
+
+//populate the database
+
+//generate mysql query upon plugin activation
+
+
+
+
+}
+
+/* create tables on plugin activation and import geoJSON data */
 register_activation_hook( __FILE__, 'sabra_maps_create_tables' );
+register_activation_hook( __FILE__, 'sabra_maps_import_geo_json' );
+
 
 /* list all table columns here for whitelisting */
 function sabra_maps_get_table_columns() {
@@ -56,33 +91,29 @@ function sabra_maps_get_table_columns() {
     );
 }
 
+
 function sabra_maps_insert( $data = array(), $timestamp = false, $country_id = false ){
     global $wpdb;        
-	$current_timestamp = current_time('timestamp');
-	$current_timestamp = date_i18n( 'Y-m-d H:i:s', $current_timestamp, true );
 
-	var_dump( $data );
-	
-    //Set default values
- 
-    //Convert activity date from local timestamp to GMT mysql format
+	$current_timestamp = current_time('timestamp');
+
+	//Prepare active timestamp
 	if ( !$timestamp ) {
 		$active_timestamp = $current_timestamp;
 	}
 	else {
 		$active_timestamp = strtotime($timestamp);
-		$active_timestamp = date_i18n( 'Y-m-d H:i:s', $active_timestamp, true );
 	}
 	//if ( !$country_id )
 	
 	//Query
-	$current_queries = sabra_maps_query( current_time('timestamp'), $country_id, $data, 'ARRAY_A');
-	
-	echo "<hr>";
-	var_dump($current_queries);
-	echo "<hr>";
-	
-	// convert array	newarray [post_id][item_id]
+	$current_queries = sabra_maps_query( $active_timestamp, $country_id, $data, 'ARRAY_A');
+
+	//Convert timestamps to Mysql formats
+	$current_timestamp = date_i18n( 'Y-m-d H:i:s', $current_timestamp, true );
+	$active_timestamp = date_i18n( 'Y-m-d H:i:s', $active_timestamp, true );
+
+	// convert array	
 	$data_array = array();
 	
 	foreach( $current_queries as $query ) {
@@ -102,12 +133,7 @@ function sabra_maps_insert( $data = array(), $timestamp = false, $country_id = f
 		}
 	
 	}
-	
-	var_dump( $data_array );
-	
-	$inserts = array();
-	$updates = array();
-	
+
 	$column_formats = sabra_maps_get_table_columns();
 	$column_names_array = array();
 	foreach( $column_formats as $name => $format ) {
@@ -133,98 +159,30 @@ function sabra_maps_insert( $data = array(), $timestamp = false, $country_id = f
 		$column_formats = array_merge(array_flip($entry_keys), $column_formats);
 	
 		if ( isset( $data_array[ $entry['post_id'] ][ $entry['item_id'] ] ) ) {
-			// Match Found
-			$updates[] = $wpdb->prepare("
+			// Match Found - Some check for value1/value2 comparison to see if anything changed might be needed here.
+			$sql_update = $wpdb->prepare("
 					UPDATE $wpdb->sabra_maps 
 					SET date_replaced = %s 
 					WHERE id = %d",
 					$current_timestamp, $data_array[ $entry['post_id'] ][ $entry['item_id'] ]['id'] );
+			if( !$wpdb->query( $sql_update ) )
+				return false;
 						
 			
 		} else {
-		
-			// New Entry!
-			
-		
+			// New Entry
 		}
 		
-		$inserts[] = $wpdb->prepare("
+		$sql_insert = $wpdb->prepare("
 					INSERT INTO $wpdb->sabra_maps ($column_names)
 					VALUES (%d, %d, %s, %s, NULL, %s, %s)",
 					$entry['post_id'], $entry['item_id'], $current_timestamp, $active_timestamp, $entry['value1'], $entry['value2'] ); 
+
+		if( !$wpdb->query( $sql_insert ) )
+			return false;
 	
 	}
-	
-	//Declare insert/updates
-	
-	//Compare Query to New Values
-
-	//Loop through new values
-
-	//Check value1 - value2 against existing
-
-	//if different populate $inserts[] and $updates[]
-
-	
-	
-    $data = wp_parse_args($data, array(
-		'date_created'=> $current_timestamp,
-		'date_active'=> $active_timestamp
-	 ));    
-
-	$sql = '';
-	$insertsql = implode( ", ", $inserts);
-	$sql .= ', ';
-	$updatesql = implode( ', ', $updates);
-	
-	echo "<hr>";
-	
-	$wpdb->show_errors();
-	
-	var_dump( $sql );
-	
-	if( !$wpdb->query( $insertsql ) )
-         return false;
-	if( !$wpdb->query( $updatesql ) )
-         return false;
-    
-    //$wpdb->insert($wpdb->sabra_maps, $data, $column_formats);
- 
-	
- 
-    //return $wpdb->insert_id;
 	return null;
-}
-
-function sabra_maps_update( $post_id, $data=array() ){
-    global $wpdb;        
- 
-    //Log ID must be positive integer
-    $post_id = absint($post_id);     
-    if( empty($post_id) )
-         return false;
- 
-    //Convert activity date from local timestamp to GMT mysql format
-    if( isset($data['activity_date']) )
-         $data['activity_date'] = date_i18n( 'Y-m-d H:i:s', $data['date'], true );
-    //Initialise column format array
-    $column_formats = sabra_maps_get_table_columns();
- 
-    //Force fields to lower case
-    $data = array_change_key_case ( $data );
- 
-    //White list columns
-    $data = array_intersect_key($data, $column_formats);
- 
-    //Reorder $column_formats to match the order of columns given in $data
-    $data_keys = array_keys($data);
-    $column_formats = array_merge(array_flip($data_keys), $column_formats);
- 
-    if ( false === $wpdb->update($wpdb->sabra_maps, $data, array('post_id'=>$post_id), $column_formats) ) {
-         return false;
-    }
- 
-    return true;
 }
 
 function sabra_maps_query( $timestamp = false, $country_id = false, $query = array(), $output_type = 'OBJECT_K' ){
@@ -238,7 +196,7 @@ function sabra_maps_query( $timestamp = false, $country_id = false, $query = arr
        'fields'		=>	array(),
 	   'orderby'	=>	'post_id',
 	   'order'		=>	'desc',
-	   'number'		=>	3,
+	   'number'		=>	10,
 	   'offset'		=>	0,
 	   'type'		=>	'point_in_time'
      );
@@ -335,7 +293,7 @@ function sabra_maps_query( $timestamp = false, $country_id = false, $query = arr
     $maps = $wpdb->get_results($sql, $output_type);
  
     /* Add to cache and filter */
-    wp_cache_add( $cache_key, $logs, 24*60*60 );
+    wp_cache_add( $cache_key, $maps, 24*60*60 );
     $maps = apply_filters('sabra_maps_query', $maps, $query);
     return $maps;
 }
