@@ -24,7 +24,7 @@ function sabra_maps_create_tables() {
 	global $charset_collate;
 	// Call this manually as we may have missed the init hook
 	sabra_maps_register_tables();
-	$wpdb->show_errors();
+
 	$sql_create_table = "CREATE TABLE {$wpdb->sabra_maps_geo_json} (
           id bigint(20) unsigned NOT NULL auto_increment,
           postal_code tinytext NULL,
@@ -369,7 +369,7 @@ function sabra_maps_get_geo_json_table_columns() {
 
 function sabra_maps_geo_json_insert( $data = array(), $timestamp = false, $country_id = false ){
     global $wpdb;        
-	$wpdb->show_errors();
+	
 	$current_timestamp = current_time('timestamp');
 
 	//Prepare active timestamp
@@ -448,7 +448,6 @@ function sabra_maps_geo_json_insert( $data = array(), $timestamp = false, $count
 
 function sabra_maps_geo_json_query( $timestamp = false, $postal_code = false, $query = array(), $output_type = 'OBJECT' ){
     global $wpdb;
-	$wpdb->show_errors();
 	if ( !$timestamp ) 
 		$timestamp = current_time('timestamp');
 
