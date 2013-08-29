@@ -16,7 +16,7 @@ add_action( 'switch_blog', 'sabra_maps_register_tables' );
 function sabra_maps_register_tables() {
     global $wpdb;
     $wpdb->sabra_maps = "{$wpdb->prefix}sabra_maps";
-	$wpdb->sabra_geo_json = "{$wpdb->prefix}sabra_maps_geo_json";
+	$wpdb->sabra_maps_geo_json = "{$wpdb->prefix}sabra_maps_geo_json";
 }
 
 function sabra_maps_create_tables() {
@@ -43,12 +43,12 @@ function sabra_maps_create_tables() {
 	$sql_create_table = "CREATE TABLE {$wpdb->sabra_maps_geo_json} (
           id bigint(20) unsigned NOT NULL auto_increment,
           post_id bigint(20) unsigned NOT NULL default '0',
-          item_id bigint(20) unsigned NOT NULL default '0',
+          postal_code tinytext unsigned NOT NULL default '0',
           date_created datetime NOT NULL default '0000-00-00 00:00:00',
           date_active datetime NOT NULL default '0000-00-00 00:00:00',
           date_replaced datetime NULL,
-          value1 varchar(40) NOT NULL default 'updated',
-          value2 varchar(40) NULL,
+          type text NULL,
+          geometry varchar(40) NOT NULL default 'updated',
           PRIMARY KEY  (id),
           KEY post_id (post_id)
      ) $charset_collate; ";
@@ -58,10 +58,14 @@ function sabra_maps_create_tables() {
 
 function sabra_maps_import_geo_json() {
 	
-//	gemotry database -- import from json
+//	geometry database -- import from json
 
+//	$file = file_get_contents( plugin_dir_path( __FILE__ ) . 'map.geojson' );
+//	var_dump( $file );
+//	echo '<hr>';
+//	var_dump( $json_decode( $file, $true ) );
 
-//load from php
+	//load from php
 
 //populate the database
 
@@ -74,7 +78,7 @@ function sabra_maps_import_geo_json() {
 
 /* create tables on plugin activation and import geoJSON data */
 register_activation_hook( __FILE__, 'sabra_maps_create_tables' );
-register_activation_hook( __FILE__, 'sabra_maps_import_geo_json' );
+//register_activation_hook( __FILE__, 'sabra_maps_import_geo_json' );
 
 
 /* list all table columns here for whitelisting */
@@ -248,10 +252,9 @@ function sabra_maps_query( $timestamp = false, $country_id = false, $query = arr
     if( !empty($country_id) )
        $where_sql .=  $wpdb->prepare(' AND post_id=%d', $country_id);
 
- 
-   $where_sql .=  $wpdb->prepare(' AND date_active <= %s', date_i18n( 'Y-m-d H:i:s', $timestamp, true));
-   $where_sql .=  $wpdb->prepare(' AND ((date_replaced IS NULL) OR (date_replaced > %s))', date_i18n( 'Y-m-d H:i:s', $timestamp, true));
- 
+	$where_sql .=  $wpdb->prepare(' AND date_active <= %s', date_i18n( 'Y-m-d H:i:s', $timestamp, true));
+	$where_sql .=  $wpdb->prepare(' AND ((date_replaced IS NULL) OR (date_replaced > %s))', date_i18n( 'Y-m-d H:i:s', $timestamp, true));
+	
     /* SQL Order */
     //Whitelist order
     $order = strtoupper($order);
@@ -298,21 +301,53 @@ function sabra_maps_query( $timestamp = false, $country_id = false, $query = arr
     return $maps;
 }
 
- function sabra_maps_delete( $post_id ){
+ function sabra_maps_delete( $id, $post_id, $item_id ){
     global $wpdb;        
- 
-    //post_id must be positive integer
-    $post_id = absint($post_id);     
-    if( empty($post_id) )
+	$wpdb->show_errors();
+    //id must be positive integer
+    $id = absint($id);     
+    if( empty($id) )
          return false;
- 
-    do_action('sabra_maps_delete',$post_id);
-    $sql = $wpdb->prepare("DELETE from {$wpdb->wptuts_activity_log} WHERE post_id = %d", $post_id);
+
+	// Query all rows of post_id and item_id
+	$sql = $wpdb->prepare( "SELECT * FROM {$wpdb->sabra_maps} WHERE post_id = %d AND item_id = %d", $post_id, $item_id );
+	$queries = $wpdb->get_results( $sql , 'ARRAY_A');
+
+	echo '<hr>';
+	var_dump($queries);
+	echo '<hr>';
+
+	// Grab date_replaced and date_active from row to be deleted
+
+	$update_timestamp = $queries[0]['date_replaced'];
+	var_dump($update_timestamp);
+	$date_active = $queries[0]['date_active'];
+	var_dump($date_active);
+	
+	//	find the entry with date_replaced = date_active
+	foreach ( $queries as $query ) {
+	var_dump( $query['date_replaced'] );
+	if ( $query['date_replaced'] == $date_active ) {
+			$update = $query['id'];
+		}
+	}
+
+	// Update previous entry with new date_replaced
+	$sql_update = $wpdb->prepare("
+					UPDATE $wpdb->sabra_maps 
+					SET date_replaced = %s 
+					WHERE id = %d",
+					$update_timestamp, $update );
+	if( !$wpdb->query( $sql_update ) ) {
+	}
+	// Delete row
+	do_action('sabra_maps_delete',$id);
+    $sql = $wpdb->prepare( "DELETE from {$wpdb->sabra_maps} WHERE id = %d", $id );
  
     if( !$wpdb->query( $sql ) )
          return false;
  
-    do_action('sabra_maps_deleted',$post_id);
+    do_action('sabra_maps_deleted',$id);
  
     return true;
 }
